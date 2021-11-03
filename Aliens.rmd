@@ -1,0 +1,267 @@
+---
+title: "UFO Sightings Visualized by RYAN COST"
+output: ioslides_presentation
+---
+
+<style type="text/css">body, p, div, h1, h2, h3, h4, h5 
+{color:black;font-family:Avenir Pro 85 Heavy;}
+slides>slide.title-slide hgroup 
+h1 {color:#165a2d;}
+h2 {color:#165a2d;}
+body{color:#0e3a1d;}
+p{font-size: 12px;}
+div{color:#0e3a1d;}
+</style> 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# Data sourcing
+## https://www.kaggle.com/NUFORC/ufo-sightings
+
+# Slide Plan:
+#   1 Title page
+#   2 Why this data?
+#   3 Data fixing 
+#       - &#44 ( , ) did not load in
+#       - changing the dates for easier wrangling
+#   4 First plot - Barchart ( Sighting count by State) (ggplot2)
+#   5 second plot - 3d PLotly scatter (plottly) (3 Variables)
+#               - x: year
+#               - y: duration
+#               - z: distance from middle of US (use lat/long calc)
+#   6 third plot - map of US with sightings (ggplot2)
+#   7 four plot - Line (Sightings over time in 3 different states) (plotly)
+#   8 Stats on sighting over time (t test)
+#   9 Conclusions based on the data
+#   10 COnclusion / final remarks
+#           
+
+dataC = read.csv("complete.csv", sep = ",", header = TRUE)
+```
+
+```{r, include = FALSE}
+library(testthat)
+library(digest)
+library(stringr)
+library(dplyr)
+library(tibble)
+library(knitr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+library(geosphere)
+```
+
+## UFO Sightings.. Are We Alone?
+
+- I found a dataset with over **89000 cases** of "Alien" contacts, all in the United States.I thought it would be intriguing to plot some of this large pool of different experiences and see how alien sightings trend across the States.
+- Also, This data is large, so part of the challenge will be select relevant parts and using that to make observations via graphs/plots
+- link to data: <https://www.kaggle.com/NUFORC/ufo-sightings>.
+- The United States is not monlithic so a dataset that covers all states can be interesting to see how different cultures/surroundings effect observations of UFOs.
+- This is also a hot topic because of the new releases from the government on declassifying UFO sightings!
+
+## Why This Data?
+
+- Different types of column fields - easy to make interesting inferences
+- Lots of entries and each is a real entry by a person. The Data has comments which are neat to read, but don't work good to make plots
+- Aliens are so interesting!
+
+
+## Are There Aliens in my State??
+
+```{r, include = FALSE}
+dataC <- data.frame(dataC)
+
+us_sightings <- filter(dataC, dataC$country == 'us')
+us_sightings <- data.frame(us_sightings)
+
+us_sightings <- us_sightings %>% group_by(state) %>% mutate(stateSightings = n())
+
+us_sightings$year = str_sub(us_sightings$datetime,-10,-6)
+us_sightings <- us_sightings %>% group_by(state, year) %>% mutate(currentSightings = n())
+
+p<-ggplot(data=us_sightings, aes(x=state, y=stateSightings, colour = state)) +
+  geom_bar(stat="unique", width = .8) +
+  scale_x_discrete(guide = guide_axis(n.dodge=3))
+
+p <- p  + guides(colour=guide_legend(nrow=4))
+p <- p + theme(legend.position = "bottom") + ylab("Number of Sightings")
+p <- p + ggtitle("Sightings by State") + theme(plot.title = element_text(size=22)) + theme(legend.title = element_text(size=5))
+
+
+```
+- California has the most sightings, in front of Washington and Florida
+```{r, echo = FALSE}
+p
+
+```
+
+## Data Wrangling / Fixing for the Bar graphs
+- I used dplyr library to group and count the total sightings per state, and add it as a column in a single line 
+```{r, echo = TRUE, eval = FALSE}
+us_sightings <- us_sightings %>% group_by(state) 
+%>% mutate(stateSightings = n())
+```
+- I also changed how the legend looked to make the bar graph look nicer and have more space:
+```{r, echo = TRUE, eval = FALSE}
+p <- p  + guides(colour=guide_legend(nrow=4))
+p <- p + theme(legend.position = "bottom") 
+        + ylab("Number of Sightings")
+```
+
+## How Far and How Long?
+
+<p>This compares year to duration as well as how far the sighting is from "the center of the US".<br> This can give insight into how sightings changed over time and where sightings are located.</p><br>
+```{r, include = FALSE}
+
+#               - x: year
+#               - y: duration
+#               - z: distance from middle of US (use lat/long calc)
+
+
+us_sightings3D <- filter(dataC, dataC$country == 'us', dataC$durationSeconds < 100 & dataC$durationSeconds > 0)
+us_sightings3D  <- data.frame(us_sightings3D )
+
+centerLat = 39.82
+centerLong = 98.57
+
+
+# us_sightings3D$distanceFromCenter = distm (c(centerLong, centerLat), c(us_sightings3D$longitude, us_sightings3D$latitude), fun = distHaversine)
+
+us_sightings3D <- us_sightings3D %>% rowwise() %>% 
+    mutate(
+      distanceFromCenter = distHaversine(c(98.57, 39.82), c(as.double(longitude),as.double(latitude))))
+
+us_sightings3D$year = str_sub(us_sightings3D$datetime,-10,-6)
+
+g <- plot_ly(us_sightings3D, x = ~year, y = ~durationSeconds, z = ~distanceFromCenter) %>%
+  add_markers(color = ~distanceFromCenter)
+g <- g %>% layout(title = "Year Found vs Distance from Center of US vs Duration")
+
+```
+
+
+```{r, echo = FALSE}
+g
+
+```
+
+## Data Wrangling / Fixing for the 3D Scatter Plot
+- I used the library(geosphere) to calculate the distance between 2 lat/long points, and used that as a column for my plot!
+```{r, echo = TRUE, eval = FALSE}
+us_sightings3D <- us_sightings3D %>% 
+  # every row
+  rowwise() %>% mutate(
+      distanceFromCenter = distHaversine(c(98.57, 39.82),
+          c(as.double(longitude),as.double(latitude))))
+```
+- Also, I used a string function to grab the data out of the longer original date format in the .csv
+```{r, echo = TRUE, eval = FALSE}
+us_sightings3D$year = str_sub(us_sightings3D$datetime,-10,-6)
+```
+
+## Aliens in the 90s
+```{r, include = FALSE}
+dataC$year = as.double(str_sub(dataC$datetime,-10,-6))
+# make a copy of the us sightings
+
+us_sightingsMap  <- filter(dataC, dataC$year >= 1990 & dataC$year <= 2000, dataC$country == 'us')
+
+
+g <- list(
+  scope = 'usa',
+  projection = list(type = 'albers usa'),
+  showland = TRUE,
+  landcolor = toRGB("gray40"),
+  subunitcolor = toRGB("gray85"),
+  countrycolor = toRGB("gray85"),
+  countrywidth = 0.5,
+  subunitwidth = 0.5
+)
+
+fig <- plot_geo(us_sightingsMap, lat = ~latitude, lon = ~longitude, color = ~state)
+
+fig <- fig %>% add_markers(
+    text = ~paste(city, state, paste("Seconds:", durationSeconds),  paste("Shape:", shape), sep = "<br />"),
+    color = ~state, symbol = I("square"), size = I(8), hoverinfo = "text"
+  )
+
+fig <- fig %>% layout(
+    title = 'Alien Sightings as a Map, 1990 to 2000', geo = g
+  )
+
+```
+
+
+```{r, echo = FALSE, warning = FALSE}
+
+fig
+
+```
+
+## Sightings over time in 3 different states
+
+```{r, include = FALSE}
+sightings  <- filter(dataC, dataC$state == 'ca' | dataC$state == 'wa' | dataC$state == 'fl', dataC$country == 'us')
+
+sightings$year = as.double(str_sub(sightings$datetime,-10,-6))
+
+sightings <- sightings %>% group_by(state, year) %>% mutate(currentSightings = n())
+
+# us_sightings$year = str_sub(us_sightings3D$datetime,-10,-6)
+
+sightings <- ungroup(sightings)
+
+fig <- plot_ly(sightings, x = ~year, y = ~currentSightings, type = 'scatter', mode = 'markers',
+  text = ~paste("Year: ", year, '<br>number of sightings:', currentSightings)) %>%
+  add_lines(color = ~state)
+
+fig <- fig %>%
+  layout(
+    title = "Sightings over time in 3 States",
+    xaxis = list(title = "Year"),
+    yaxis = list (title = "Amount of Sightings")
+  )
+```
+
+```{r, echo = FALSE, warning = FALSE}
+fig
+```
+
+
+## Data Wrangling / Fixing for the Line Graph
+- Again, adding in a new column with a function is so convenient!<br>
+This code makes sightings of the current year, It was able to do this because the line groups by year and then state
+```{r, echo = TRUE, eval = FALSE}
+sightings <- sightings %>% group_by(state, year)
+%>% mutate(currentSightings = n())
+```
+- An interesting problem was that my lines were not showing, I found that the issue was that they were grouped,<br>
+So I un-grouped before plotting
+```{r, echo = TRUE, eval = FALSE}
+sightings <- ungroup(sightings)
+```
+
+
+## Stats on Sighting Over Time (t test)
+
+1 Population T test ( California, Washington, Florida vs. All states )
+```{r, include = FALSE}
+years <- sightings$year
+sightingsTest <- sightings$currentSightings
+```
+
+```{r, echo = FALSE, warning = FALSE}
+t.test(sightings$currentSightings, mu = mean(us_sightings$currentSightings))
+
+```
+- This would mean to reject the null Hypothesis
+- One could conclude that since the p-value is near zero, that these 3 states have far more sightings per year than any other states in the USA
+
+## Conclusion / Final Remarks
+
+- Florida, California, and Washington are Alien spotting hot-spots
+- I am sure that this data or other alien spotting data will be reviewed along with the de-classification of more Alien documents
+- As technology advanced, more people came forward to report alien sightings
+- Social media/smart phones played a part in the increase of sightings
